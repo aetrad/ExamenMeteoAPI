@@ -1,0 +1,117 @@
+﻿@page "/"
+@inject WeatherService weatherService
+@inject IJSRuntime JSRuntime
+@using System.Text.Json
+
+<h1>Météo</h1>
+
+<div>
+    <input type="text" @bind="CityName" />
+    <button @onclick="GetWeather">Obtenir la météo</button>
+</div>
+
+@if (weatherData != null)
+{
+    <div>
+        <p>Température : @weatherData.Main.Temp °C</p>
+        <p>Description : @weatherData.Weather[0].Description</p>
+        <button @onclick="AddToFavorites">Ajouter aux favoris</button>
+    </div>
+}
+
+<h2>Favoris</h2>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Ville</th>
+            <th>Température</th>
+            <th>Description</th>
+            <th>Commentaire</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var favorite in favorites)
+        {
+            <tr>
+                <td>@favorite.CityName</td>
+                <td>@favorite.Temperature °C</td>
+                <td>@favorite.Description</td>
+                <td>
+                    <input type="text" @bind="favorite.Comment" placeholder="Ajouter un commentaire" />
+                </td>
+                <td>
+                    <button @onclick="() => favorite.RoundTemperature()">Arrondir</button>
+                    <button @onclick="() => RemoveFromFavorites(favorite)">Supprimer</button>
+                    <button @onclick="() => RefreshFavoriteWeather(favorite)">Rafraîchir</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private string CityName { get; set; }
+    private WeatherData weatherData;
+    private List<FavoriteLocation> favorites = new List<FavoriteLocation>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFavoritesFromLocalStorage();
+    }
+
+    private async Task GetWeather()
+    {
+        weatherData = await weatherService.GetWeatherAsync(CityName);
+    }
+
+    private async Task AddToFavorites()
+    {
+        if (weatherData != null)
+        {
+            var favorite = new FavoriteLocation
+                {
+                    CityName = CityName,
+                    Temperature = weatherData.Main.Temp,
+                    Description = weatherData.Weather[0].Description
+                };
+            favorites.Add(favorite);
+            await SaveFavoritesToLocalStorage();
+        }
+    }
+
+    private async Task RemoveFromFavorites(FavoriteLocation favorite)
+    {
+        favorites.Remove(favorite);
+        await SaveFavoritesToLocalStorage();
+    }
+
+
+
+    private async Task LoadFavoritesFromLocalStorage()
+    {
+        var favoritesJson = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "favorites");
+        if (!string.IsNullOrEmpty(favoritesJson))
+        {
+            favorites = JsonSerializer.Deserialize<List<FavoriteLocation>>(favoritesJson);
+        }
+    }
+
+    private async Task SaveFavoritesToLocalStorage()
+    {
+        var favoritesJson = JsonSerializer.Serialize(favorites);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "favorites", favoritesJson);
+    }
+    public async Task RefreshFavoriteWeather(FavoriteLocation favorite)
+    {
+        var updatedWeatherData = await weatherService.GetWeatherAsync(favorite.CityName);
+        if (updatedWeatherData != null)
+        {
+            favorite.Temperature = updatedWeatherData.Main.Temp;
+            favorite.Description = updatedWeatherData.Weather[0].Description;
+            await SaveFavoritesToLocalStorage();
+        }
+    }
+
+}
